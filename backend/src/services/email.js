@@ -2,13 +2,16 @@
 // Email service. Provider order:
 //   1. Resend API   (RESEND_API_KEY in .env)  — recommended, free tier
 //   2. SMTP         (SMTP_HOST/USER/PASS)     — any classic provider
-//   3. Dev log      (nothing configured)      — link is logged + returned so
-//                                               the hard email gate never
-//                                               locks anyone out locally.
+//   3. Dev log      (nothing configured)      — link is logged so the hard
+//                                               email gate never locks anyone out.
+// Verification links use the ORIGIN the user registered from (so deployed apps
+// don't send localhost links) — see auth.js. APP_BASE_URL is an optional override.
 // ===========================================================================
 import nodemailer from "nodemailer";
 import { Resend } from "resend";
 import { config } from "../config.js";
+
+const RESEND_SAFE_FROM = "GradeSure <onboarding@resend.dev>";
 
 let resend = null;
 let smtp = null;
@@ -16,6 +19,13 @@ let smtp = null;
 if (config.resend.apiKey) {
   resend = new Resend(config.resend.apiKey);
   console.log("[email] Resend API transport ready.");
+  if (!/@resend\.dev>?\s*$/i.test(config.resend.from)) {
+    console.warn(
+      `[email] RESEND_FROM is "${config.resend.from}". On Resend's free tier you can only send from ` +
+      `onboarding@resend.dev (and only TO your own account email) until you verify a domain at ` +
+      `https://resend.com/domains. Unverified sends auto-fall back to ${RESEND_SAFE_FROM}.`
+    );
+  }
 } else if (config.emailEnabled) {
   smtp = nodemailer.createTransport({
     host: config.smtp.host,
@@ -28,21 +38,32 @@ if (config.resend.apiKey) {
   console.log("[email] No email provider configured — verification links will be logged (dev mode).");
 }
 
-export function verificationLink(token) {
-  return `${config.appBaseUrl}/verify?token=${encodeURIComponent(token)}`;
+export function verificationLink(baseUrl, token) {
+  const base = (baseUrl || config.appBaseUrl).replace(/\/+$/, "");
+  return `${base}/verify?token=${encodeURIComponent(token)}`;
+}
+
+const isDomainError = (msg = "") => /not verified|domain/i.test(msg);
+
+async function sendViaResend(from, payload) {
+  const { data, error } = await resend.emails.send({ from, ...payload });
+  if (error) throw new Error(`Resend: ${error.message || JSON.stringify(error)}`);
+  return { delivered: true, provider: "resend", id: data?.id };
 }
 
 async function deliver({ to, subject, text, html }) {
   if (resend) {
-    const { data, error } = await resend.emails.send({
-      from: config.resend.from,
-      to,
-      subject,
-      html,
-      text,
-    });
-    if (error) throw new Error(`Resend: ${error.message || JSON.stringify(error)}`);
-    return { delivered: true, provider: "resend", id: data?.id };
+    try {
+      return await sendViaResend(config.resend.from, { to, subject, html, text });
+    } catch (err) {
+      // Most common footgun: sending from an unverified domain. Retry once with
+      // the always-allowed onboarding sender so real emails still go out.
+      if (isDomainError(err.message) && config.resend.from !== RESEND_SAFE_FROM) {
+        console.warn(`[email] ${err.message} — retrying from ${RESEND_SAFE_FROM}.`);
+        return await sendViaResend(RESEND_SAFE_FROM, { to, subject, html, text });
+      }
+      throw err;
+    }
   }
   if (smtp) {
     await smtp.sendMail({ from: config.smtp.from, to, subject, text, html });
@@ -51,8 +72,8 @@ async function deliver({ to, subject, text, html }) {
   return { delivered: false, provider: "dev-log" };
 }
 
-export async function sendVerificationEmail(user, token) {
-  const link = verificationLink(token);
+export async function sendVerificationEmail(user, token, baseUrl) {
+  const link = verificationLink(baseUrl, token);
   const subject = "Verify your GradeSure account";
   const text = `Hi ${user.full_name},\n\nWelcome to GradeSure! Please confirm your email to activate your account:\n\n${link}\n\nIf you didn't sign up, ignore this message.`;
   const html = `
@@ -74,8 +95,7 @@ export async function sendVerificationEmail(user, token) {
       return { delivered: true, link };
     }
   } catch (err) {
-    // Delivery failure must not strand the user: fall through to the dev link.
-    console.error(`[email] Send failed (${err.message}) — falling back to logged link.`);
+    console.error(`[email] Send failed (${err.message}) — link logged below as a fallback.`);
   }
 
   console.log("\n==================== EMAIL (dev log) ====================");

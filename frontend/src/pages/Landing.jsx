@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { GradeSureIcon } from "../components/icons.jsx";
+import Copyright from "../components/Copyright.jsx";
 
 // ===========================================================================
 // Public landing page — styled after Colorlib's "Imagine" one-page template:
@@ -310,12 +311,15 @@ function Footer() {
           <GradeSureIcon className="h-5 w-5" style={{ color: "#7baaf7" }} />
           Grade<span style={{ color: "#7baaf7" }}>Sure</span>
         </span>
-        <p>GCSE Grade 8–9 Master Planner (C) <a href="https://www.deepakingwale.com">Deepak Ingwale </a></p>
+        <p>GCSE Grade 8–9 Master Planner</p>
         <div className="flex gap-6">
           <a href="#features" className="transition hover:text-white">Features</a>
           <a href="#ai" className="transition hover:text-white">AI Planner</a>
           <a href="#mission" className="transition hover:text-white">Mission</a>
         </div>
+      </div>
+      <div className="mx-auto mt-8 max-w-6xl border-t border-white/10 px-4 pt-6 text-center text-xs text-slate-500">
+        <Copyright />
       </div>
     </footer>
   );

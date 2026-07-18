@@ -24,6 +24,10 @@ import adminRoutes from "./routes/admin.js";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
 
+// Behind Nginx / a cloud load balancer: trust X-Forwarded-* so req.protocol,
+// req.ip (rate limiting) and email link derivation reflect the real origin.
+app.set("trust proxy", 1);
+
 // Helmet with CSP relaxed enough to serve our own static SPA in single-container mode.
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(

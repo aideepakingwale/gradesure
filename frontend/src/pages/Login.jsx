@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext.jsx";
 import { api } from "../api.js";
 import { GradeSureIcon } from "../components/icons.jsx";
+import Copyright from "../components/Copyright.jsx";
 
 export default function Login() {
   const { login } = useAuth();
@@ -105,7 +106,7 @@ export function AuthShell({ title, subtitle, children }) {
         </div>
         <div className="text-sm text-brand-200">For any GCSE exam series</div>
       </div>
-      <div className="flex items-center justify-center p-6">
+      <div className="flex flex-col items-center justify-center p-6">
         <div className="w-full max-w-md">
           <div className="mb-6 text-center lg:text-left">
             <h2 className="text-2xl font-extrabold text-slate-800">{title}</h2>
@@ -113,6 +114,7 @@ export function AuthShell({ title, subtitle, children }) {
           </div>
           {children}
         </div>
+        <Copyright className="mt-10 text-center text-xs text-slate-400" />
       </div>
     </div>
   );

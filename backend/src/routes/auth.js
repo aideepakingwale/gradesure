@@ -36,6 +36,29 @@ function signToken(user) {
 }
 const newToken = () => crypto.randomBytes(32).toString("hex");
 
+// Base URL for links in emails, resolved in priority order:
+//  1. X-Forwarded-Host (real domain when behind a proxy / cloud LB),
+//  2. an explicit non-localhost APP_BASE_URL override,
+//  3. the request's own Host (includes the port for local use).
+// So deployed apps email real-domain links and local dev keeps :PORT.
+function emailBaseUrl(req) {
+  const clean = (u) => u.replace(/\/+$/, "");
+  const fwdHost = req.headers["x-forwarded-host"];
+  const fwdProto = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim();
+  if (fwdHost) return clean(`${fwdProto || "https"}://${fwdHost}`);
+
+  const configured = config.appBaseUrl || "";
+  if (configured && !/localhost|127\.0\.0\.1/.test(configured)) return clean(configured);
+
+  const proto = fwdProto || req.protocol || "http";
+  return req.headers.host ? clean(`${proto}://${req.headers.host}`) : clean(configured);
+}
+
+// Only expose the raw verification link in API responses outside production,
+// so tokens are never leaked in a live deployment's HTTP responses.
+const devLink = (link, delivered) =>
+  !delivered && config.env !== "production" ? link : undefined;
+
 // POST /api/auth/register — creates an UNVERIFIED parent + sends a verify email.
 router.post(
   "/register",
@@ -55,13 +78,13 @@ router.post(
       [email, hash, full_name, token]
     );
     const user = rows[0];
-    const { delivered, link } = await sendVerificationEmail(user, token);
+    const { delivered, link } = await sendVerificationEmail(user, token, emailBaseUrl(req));
     res.status(201).json({
       message: "Account created. Check your email to verify your account before signing in.",
       email: user.email,
       email_delivered: delivered,
-      // In dev (no SMTP) we surface the link so the hard gate isn't a dead-end.
-      verify_link: delivered ? undefined : link,
+      // Dev-only convenience so the hard gate isn't a dead-end without email.
+      verify_link: devLink(link, delivered),
     });
   })
 );
@@ -101,11 +124,11 @@ router.post(
     }
     const token = newToken();
     await query("UPDATE users SET verification_token = $1, verification_sent_at = now() WHERE id = $2", [token, user.id]);
-    const { delivered, link } = await sendVerificationEmail(user, token);
+    const { delivered, link } = await sendVerificationEmail(user, token, emailBaseUrl(req));
     res.json({
       message: "Verification email re-sent.",
       email_delivered: delivered,
-      verify_link: delivered ? undefined : link,
+      verify_link: devLink(link, delivered),
     });
   })
 );
