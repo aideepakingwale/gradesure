@@ -1,0 +1,8 @@
+**/node_modules
+**/dist
+**/.env
+.git
+.github
+*.md
+docs
+frontend/nginx.conf
