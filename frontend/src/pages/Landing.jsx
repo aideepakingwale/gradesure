@@ -310,7 +310,7 @@ function Footer() {
           <GradeSureIcon className="h-5 w-5" style={{ color: "#7baaf7" }} />
           Grade<span style={{ color: "#7baaf7" }}>Sure</span>
         </span>
-        <p>GCSE Grade 8–9 Master Planner</p>
+        <p>GCSE Grade 8–9 Master Planner (C) <a href="https://www.deepakingwale.com">Deepak Ingwale </a></p>
         <div className="flex gap-6">
           <a href="#features" className="transition hover:text-white">Features</a>
           <a href="#ai" className="transition hover:text-white">AI Planner</a>
