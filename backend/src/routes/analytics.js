@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { query } from "../db.js";
-import { requireAuth } from "../middleware/auth.js";
+import { requireAuth, requireRole } from "../middleware/auth.js";
 import { asyncHandler } from "../middleware/errorHandler.js";
 import { loadOwnedStudent } from "./students.js";
 import { ensureMaterialized } from "../services/materializer.js";
@@ -9,9 +9,10 @@ const router = Router();
 router.use(requireAuth);
 
 // GET /api/students/:id/analytics?start=YYYY-MM-DD&days=60
-// Reads the RECORDED plan (plan_items): completion trajectory + per-subject.
+// Parent/admin only. Reads the RECORDED plan (plan_items).
 router.get(
   "/students/:id/analytics",
+  requireRole("parent", "admin"),
   loadOwnedStudent,
   asyncHandler(async (req, res) => {
     const days = Math.min(parseInt(req.query.days || "60", 10), 180);

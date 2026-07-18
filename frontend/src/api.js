@@ -40,7 +40,8 @@ async function request(path, { method = "GET", body, auth = true } = {}) {
 
 export const api = {
   register: (payload) => request("/auth/register", { method: "POST", body: payload, auth: false }),
-  login: (payload) => request("/auth/login", { method: "POST", body: payload, auth: false }),
+  login: ({ identifier, password }) =>
+    request("/auth/login", { method: "POST", body: { identifier, password }, auth: false }),
   verify: (token) => request("/auth/verify", { method: "POST", body: { token }, auth: false }),
   resend: (email) => request("/auth/resend", { method: "POST", body: { email }, auth: false }),
   me: () => request("/auth/me"),
@@ -51,6 +52,8 @@ export const api = {
   updateStudent: (id, payload) => request(`/students/${id}`, { method: "PATCH", body: payload }),
   deleteStudent: (id) => request(`/students/${id}`, { method: "DELETE" }),
   upsertSubject: (id, payload) => request(`/students/${id}/subjects`, { method: "PUT", body: payload }),
+  setStudentLogin: (id, payload) => request(`/students/${id}/login`, { method: "PUT", body: payload }),
+  removeStudentLogin: (id) => request(`/students/${id}/login`, { method: "DELETE" }),
 
   getPlan: (id, start, days = 30) =>
     request(`/students/${id}/plan?start=${start}&days=${days}`),
@@ -62,6 +65,7 @@ export const api = {
   getAnalytics: (id, days = 60) => request(`/students/${id}/analytics?days=${days}`),
   getResources: () => request("/resources"),
   getCatalog: () => request("/catalog/subjects"),
+  getCalendarDefaults: (yearGroup) => request(`/catalog/calendar-defaults?year_group=${yearGroup}`),
 
   // Admin: master reference library
   adminRefOverview: () => request("/admin/references/overview"),

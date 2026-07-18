@@ -68,7 +68,7 @@ export default function Layout() {
       </main>
 
       <footer className="mx-auto max-w-6xl px-4 py-8 text-center text-xs text-slate-400">
-        GradeSure · the smart plan you can trust, all the way to Grade 9 · May/June 2027 series
+        GradeSure · the smart plan you can trust, all the way to Grade 9
       </footer>
     </div>
   );

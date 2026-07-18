@@ -1,10 +1,13 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, Navigate } from "react-router-dom";
 import { api } from "../api.js";
+import { useAuth } from "../context/AuthContext.jsx";
 import AddStudentForm from "../components/AddStudentForm.jsx";
 import { PlusIcon, GraduationCapIcon, ChartBarIcon, CalendarIcon } from "../components/icons.jsx";
 
 export default function Dashboard() {
+  const { user } = useAuth();
+  const isStudent = user?.role === "student";
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -21,6 +24,11 @@ export default function Dashboard() {
   useEffect(() => {
     load();
   }, []);
+
+  // Students go straight to their own planner — no dashboard list for them.
+  if (isStudent && !loading && students[0]) {
+    return <Navigate to={`/app/students/${students[0].id}`} replace />;
+  }
 
   return (
     <div>

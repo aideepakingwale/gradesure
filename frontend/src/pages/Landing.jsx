@@ -67,7 +67,7 @@ function Hero() {
       <div className="mx-auto grid max-w-6xl items-center gap-10 px-4 pb-20 pt-14 lg:grid-cols-2 lg:pt-20">
         <div className="order-2 text-center lg:order-1 lg:text-left">
           <p className="text-sm font-bold uppercase tracking-[0.2em]" style={{ color: BLUE }}>
-            GCSE 2027 · AI study planning
+            GCSE · AI study planning
           </p>
           <h1 className="mt-4 text-4xl font-extrabold leading-tight tracking-tight text-slate-900 sm:text-5xl">
             The smart plan you can <span style={{ color: BLUE }}>trust</span> — all the way to Grade 9.
@@ -286,7 +286,7 @@ function CTA() {
             Start the Grade 8–9 plan tonight
           </h2>
           <p className="mx-auto mt-3 max-w-xl text-blue-100">
-            The May/June 2027 exams are already on the calendar. Every week you start earlier compounds.
+            Exam day is already on the calendar. Every week you start earlier compounds.
           </p>
           <div className="mt-8 flex flex-wrap justify-center gap-4">
             <Link to="/register" className="rounded-full bg-white px-8 py-3.5 font-semibold shadow-lg transition hover:bg-blue-50" style={{ color: BLUE }}>
@@ -310,7 +310,7 @@ function Footer() {
           <GradeSureIcon className="h-5 w-5" style={{ color: "#7baaf7" }} />
           Grade<span style={{ color: "#7baaf7" }}>Sure</span>
         </span>
-        <p>GCSE Grade 8–9 Master Planner · May/June 2027 series</p>
+        <p>GCSE Grade 8–9 Master Planner</p>
         <div className="flex gap-6">
           <a href="#features" className="transition hover:text-white">Features</a>
           <a href="#ai" className="transition hover:text-white">AI Planner</a>

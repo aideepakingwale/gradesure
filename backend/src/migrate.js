@@ -19,6 +19,23 @@ export async function runMigrations() {
     // Populate the master reference library on first boot.
     const { seedReferencesIfEmpty } = await import("./services/referenceStore.js");
     await seedReferencesIfEmpty();
+
+    // Give the demo student a valid calendar for the NEXT exam series (any year).
+    const { defaultCalendarForYearGroup } = await import("./services/academicYear.js");
+    const { rows: demo } = await client.query(
+      "SELECT id, year_group FROM students WHERE id = '00000000-0000-0000-0000-0000000000a1' AND (term_dates = '[]'::jsonb OR exam_start IS NULL)"
+    );
+    if (demo[0]) {
+      const cal = defaultCalendarForYearGroup(demo[0].year_group);
+      await client.query(
+        `UPDATE students SET exam_series=$1, exam_start=$2, exam_end=$3, term_dates=$4, holidays=$5
+          WHERE id = $6`,
+        [cal.exam_series, cal.exam_start, cal.exam_end,
+         JSON.stringify(cal.term_dates), JSON.stringify(cal.holidays),
+         demo[0].id]
+      );
+      console.log(`[migrate] Demo student calendar set to ${cal.exam_series}.`);
+    }
   } catch (err) {
     console.error("[migrate] Failed to apply schema:", err.message);
     throw err;

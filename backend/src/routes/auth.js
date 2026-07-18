@@ -17,10 +17,13 @@ const registerSchema = z.object({
   email: z.string().email().max(160),
   password: z.string().min(8).max(128),
 });
-const loginSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(1),
-});
+const loginSchema = z
+  .object({
+    identifier: z.string().min(1).max(160).optional(),
+    email: z.string().min(1).max(160).optional(),
+    password: z.string().min(1),
+  })
+  .refine((d) => d.identifier || d.email, { message: "Email or username is required." });
 const emailSchema = z.object({ email: z.string().email() });
 const tokenSchema = z.object({ token: z.string().min(10) });
 
@@ -112,16 +115,19 @@ router.post(
   "/login",
   validate(loginSchema),
   asyncHandler(async (req, res) => {
-    const { email, password } = req.body;
+    const identifier = (req.body.identifier || req.body.email || "").trim();
+    const { password } = req.body;
+    // Match on email OR username (students sign in with a username, no email).
     const { rows } = await query(
-      "SELECT id, email, full_name, role, password_hash, email_verified FROM users WHERE email = $1",
-      [email]
+      "SELECT id, email, username, full_name, role, password_hash, email_verified FROM users WHERE email = $1 OR username = $1",
+      [identifier]
     );
     const user = rows[0];
     if (!user || !(await bcrypt.compare(password, user.password_hash))) {
-      return res.status(401).json({ error: "Invalid email or password." });
+      return res.status(401).json({ error: "Invalid credentials." });
     }
-    if (!user.email_verified) {
+    // Email verification applies only to email accounts (parents/admins).
+    if (user.email && !user.email_verified) {
       return res.status(403).json({ error: "Please verify your email before signing in.", code: "email_unverified" });
     }
     delete user.password_hash;

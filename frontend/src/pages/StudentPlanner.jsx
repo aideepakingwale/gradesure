@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api } from "../api.js";
+import { useAuth } from "../context/AuthContext.jsx";
 import { parseIso, startOfWeek, monthGridStart, todayIso } from "../utils/dates.js";
 import { NEXT_STATUS } from "../utils/ui.js";
 import CalendarHeader from "../components/calendar/CalendarHeader.jsx";
@@ -10,7 +11,8 @@ import DayView from "../components/calendar/DayView.jsx";
 import PersonalizationPanel from "../components/PersonalizationPanel.jsx";
 import StudyGuidePanel from "../components/StudyGuidePanel.jsx";
 import EvaluationPanel from "../components/EvaluationPanel.jsx";
-import { ArrowLeftIcon, ChartBarIcon } from "../components/icons.jsx";
+import StudentLoginModal from "../components/StudentLoginModal.jsx";
+import { ArrowLeftIcon, ChartBarIcon, UserIcon } from "../components/icons.jsx";
 
 // Window (start date + day count) that a given view needs loaded.
 function windowFor(view, anchorIso) {
@@ -28,7 +30,11 @@ function isoOf(d) {
 
 export default function StudentPlanner() {
   const { id } = useParams();
+  const { user } = useAuth();
+  const isStudent = user?.role === "student";
   const [student, setStudent] = useState(null);
+  const [loginInfo, setLoginInfo] = useState(null);
+  const [showLoginModal, setShowLoginModal] = useState(false);
   const [profile, setProfile] = useState(null);
   const [resources, setResources] = useState({});
   const [daysMap, setDaysMap] = useState({});
@@ -39,21 +45,22 @@ export default function StudentPlanner() {
   const [anchor, setAnchor] = useState(todayIso());
   const [loading, setLoading] = useState(true);
 
-  // One-time context load.
+  // One-time context load. Students skip the parent-only analytics/eval calls.
   useEffect(() => {
     let alive = true;
     (async () => {
       setLoading(true);
       try {
-        const [{ student }, res, prof, current, evaluations] = await Promise.all([
+        const [{ student, login }, res, prof, current, evaluations] = await Promise.all([
           api.getStudent(id),
           api.getResources(),
           api.getProfile(id),
           api.getCurrentPlan(id).catch(() => ({ plan: null })),
-          api.getEvaluations(id, 4).catch(() => null),
+          isStudent ? Promise.resolve(null) : api.getEvaluations(id, 4).catch(() => null),
         ]);
         if (!alive) return;
         setStudent(student);
+        setLoginInfo(login || null);
         setResources(res.by_subject || {});
         setProfile(prof);
         setAiPlan(current?.plan || null);
@@ -63,7 +70,12 @@ export default function StudentPlanner() {
       }
     })();
     return () => { alive = false; };
-  }, [id]);
+  }, [id, isStudent]);
+
+  async function refreshLogin() {
+    const { login } = await api.getStudent(id);
+    setLoginInfo(login || null);
+  }
 
   // Fetch the plan window whenever view/anchor changes.
   const loadWindow = useCallback(async () => {
@@ -142,19 +154,42 @@ export default function StudentPlanner() {
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <Link to="/app" className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-600 hover:underline">
-            <ArrowLeftIcon className="h-3.5 w-3.5" /> All students
-          </Link>
-          <h1 className="mt-1 text-2xl font-extrabold text-slate-900">{student.full_name}'s Grade 9 Planner</h1>
+          {!isStudent && (
+            <Link to="/app" className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-600 hover:underline">
+              <ArrowLeftIcon className="h-3.5 w-3.5" /> All students
+            </Link>
+          )}
+          <h1 className="mt-1 text-2xl font-extrabold text-slate-900">
+            {isStudent ? `Hi ${student.full_name.split(" ")[0]} — your Grade 9 Planner` : `${student.full_name}'s Grade 9 Planner`}
+          </h1>
           <p className="text-slate-500">{student.school} · Year {student.year_group} · {student.exam_series}</p>
         </div>
-        <Link to={`/app/students/${id}/analytics`} className="btn-ghost">
-          <ChartBarIcon className="h-4 w-4" /> View analytics
-        </Link>
+        {!isStudent && (
+          <div className="flex flex-wrap gap-2">
+            <button className="btn-ghost" onClick={() => setShowLoginModal(true)}>
+              <UserIcon className="h-4 w-4" />
+              {loginInfo?.enabled ? "Student login" : "Set up student login"}
+            </button>
+            <Link to={`/app/students/${id}/analytics`} className="btn-ghost">
+              <ChartBarIcon className="h-4 w-4" /> View analytics
+            </Link>
+          </div>
+        )}
       </div>
 
-      <StudyGuidePanel plan={aiPlan} onGenerate={onGenerate} generating={generating} />
-      {evals?.evaluations?.some((e) => e.expected > 0) && (
+      {showLoginModal && (
+        <StudentLoginModal
+          studentId={id}
+          studentName={student.full_name}
+          login={loginInfo}
+          onClose={() => setShowLoginModal(false)}
+          onSaved={refreshLogin}
+        />
+      )}
+
+      {/* AI guide: students view read-only (no generate/regenerate). */}
+      <StudyGuidePanel plan={aiPlan} onGenerate={onGenerate} generating={generating} readOnly={isStudent} />
+      {!isStudent && evals?.evaluations?.some((e) => e.expected > 0) && (
         <EvaluationPanel evaluations={evals.evaluations} latest={evals.latest} />
       )}
       <PersonalizationPanel profile={profile} />

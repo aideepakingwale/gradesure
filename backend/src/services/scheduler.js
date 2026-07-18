@@ -7,6 +7,7 @@
 
 import { CURRICULUM, SUBJECT_META } from "../data/curriculum.js";
 import { buildStudyPlan } from "./personalization.js";
+import { examYearFor, defaultCalendar, academicYearStart } from "./academicYear.js";
 
 // Generic topic bank for custom subjects that have no curated curriculum.
 const GENERIC_BANK = [
@@ -17,33 +18,27 @@ const GENERIC_BANK = [
   { slug: "flashcards", title: "Spaced-repetition flashcards", hint: "Quizlet / Anki" },
 ];
 
-// Baseline for topic rotation (matches the master plan).
-const BASELINE = new Date("2026-07-01T00:00:00Z");
-
-// --- Default Lampton School / Hounslow 2026-2027 calendar (fallback) --------
-// Used when a student has no term dates of their own. Terms are inclusive
-// ranges of school days; holidays punch gaps within them.
-const DEFAULT_TERMS = [
-  { name: "Autumn", start: "2026-09-03", end: "2026-12-18" },
-  { name: "Spring", start: "2027-01-05", end: "2027-03-26" },
-  { name: "Summer", start: "2027-04-12", end: "2027-07-21" },
-];
-const DEFAULT_HOLIDAYS = [
-  { name: "October half term", start: "2026-10-26", end: "2026-10-30" },
-  { name: "Christmas", start: "2026-12-19", end: "2027-01-04" },
-  { name: "February half term", start: "2027-02-15", end: "2027-02-19" },
-  { name: "Easter", start: "2027-03-27", end: "2027-04-11" },
-  { name: "May half term", start: "2027-05-31", end: "2027-06-04" },
-];
-const DEFAULT_EXAM_START = "2027-05-10";
-
-// Normalise a calendar arg (student term dates) with sensible fallbacks.
+// Normalise a calendar arg (student term dates) with dynamic, year-agnostic
+// fallbacks. When a student has no term dates, we derive a default UK calendar
+// for their exam year (from examStart, else the next series for a Year 11).
+// The topic-rotation baseline is the academic-year start, so every student's
+// plan begins at the first topic regardless of which year they sit exams.
 export function resolveCalendar(calendar) {
-  return {
-    terms: calendar?.terms?.length ? calendar.terms : DEFAULT_TERMS,
-    holidays: calendar?.holidays?.length ? calendar.holidays : DEFAULT_HOLIDAYS,
-    examStart: calendar?.examStart || DEFAULT_EXAM_START,
-  };
+  let terms = calendar?.terms?.length ? calendar.terms : null;
+  let holidays = calendar?.holidays?.length ? calendar.holidays : null;
+  let examStart = calendar?.examStart || null;
+
+  if (!terms || !examStart) {
+    const examYear = examStart ? Number(examStart.slice(0, 4)) : examYearFor(11);
+    const def = defaultCalendar(examYear);
+    if (!terms) terms = def.term_dates;
+    if (!holidays) holidays = def.holidays;
+    if (!examStart) examStart = def.exam_start;
+  }
+  if (!holidays) holidays = [];
+
+  const baseline = academicYearStart(terms) || `${Number(examStart.slice(0, 4)) - 1}-09-01`;
+  return { terms, holidays, examStart, baseline };
 }
 
 function toDate(s) {
@@ -60,7 +55,7 @@ function inRange(d, start, end) {
 // Phase is derived from months-to-exam, so it works for ANY exam window.
 export function getPhase(date, examStart) {
   const d = toDate(date);
-  const exam = toDate(examStart || DEFAULT_EXAM_START);
+  const exam = toDate(examStart || `${examYearFor(11)}-05-11`);
   if (d > exam) return { key: "beyond", name: "Post-exam", focus: "Exams complete — well done!" };
   const monthsToExam = (exam - d) / (30.44 * 86_400_000);
   const month = d.getUTCMonth(); // 0=Jan
@@ -111,8 +106,10 @@ function metaFor(plan, key) {
   return plan.meta[key] || SUBJECT_META[key] || { name: key, board: "" };
 }
 
-function weekIndexFor(date) {
-  const days = Math.floor((toDate(date) - BASELINE) / 86_400_000);
+// Weeks since the student's academic-year start (the topic-rotation anchor).
+function weekIndexFor(date, baseline) {
+  const base = toDate(baseline);
+  const days = Math.floor((toDate(date) - base) / 86_400_000);
   return Math.floor(days / 7);
 }
 
@@ -129,7 +126,7 @@ export function generateDay(date, plan, calendar) {
   const cal = resolveCalendar(calendar);
   const ctx = getDayContext(date, cal);
   const phase = getPhase(date, cal.examStart);
-  const weekIndex = weekIndexFor(date);
+  const weekIndex = weekIndexFor(date, cal.baseline);
   const blocks = ctx.isSchoolDay ? EVENING_BLOCKS : MORNING_BLOCKS;
   const order = plan.priorityOrder;
   const pick = (i) => order[mod(i, order.length)]; // rotate by priority order
@@ -204,4 +201,4 @@ export function generateRange(startDate, count = 30, plan, calendar) {
   return out;
 }
 
-export const CALENDAR = { DEFAULT_TERMS, DEFAULT_HOLIDAYS };
+export { defaultCalendar, examYearFor } from "./academicYear.js";

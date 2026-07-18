@@ -7,7 +7,7 @@ import { GradeSureIcon } from "../components/icons.jsx";
 export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [email, setEmail] = useState("parent@demo.local");
+  const [identifier, setIdentifier] = useState("parent@demo.local");
   const [password, setPassword] = useState("Password123!");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -20,7 +20,7 @@ export default function Login() {
     setResent("");
     setBusy(true);
     try {
-      await login(email, password);
+      await login(identifier, password);
       navigate("/app");
     } catch (err) {
       setError(err.message);
@@ -33,7 +33,7 @@ export default function Login() {
   async function resend() {
     setResent("");
     try {
-      const r = await api.resend(email);
+      const r = await api.resend(identifier);
       setResent(r.verify_link ? `Dev link: ${r.verify_link}` : "Verification email re-sent — check your inbox.");
     } catch (err) {
       setResent(err.message);
@@ -52,25 +52,28 @@ export default function Login() {
           </div>
         )}
         <div>
-          <label className="label">Email</label>
-          <input className="input" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          <label className="label">Email or username</label>
+          <input className="input" type="text" autoComplete="username" value={identifier}
+                 onChange={(e) => setIdentifier(e.target.value)} required
+                 placeholder="parent@email.com or student username" />
         </div>
         <div>
           <label className="label">Password</label>
-          <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+          <input className="input" type="password" autoComplete="current-password" value={password}
+                 onChange={(e) => setPassword(e.target.value)} required />
         </div>
         <button className="btn-primary w-full" disabled={busy}>
           {busy ? "Signing in…" : "Sign in"}
         </button>
       </form>
       <p className="mt-6 text-center text-sm text-slate-500">
-        New here?{" "}
+        Parent?{" "}
         <Link to="/register" className="font-semibold text-brand-600 hover:underline">
-          Create a parent account
+          Create an account
         </Link>
-      </p>
-      <p className="mt-3 text-center text-xs text-slate-400">
-        Demo login is pre-filled · parent@demo.local / Password123!
+        <span className="mt-1 block text-xs text-slate-400">
+          Students sign in with the username &amp; password their parent set up.
+        </span>
       </p>
     </AuthShell>
   );
@@ -91,16 +94,16 @@ export function AuthShell({ title, subtitle, children }) {
             The single source of truth on the road to Grade 8–9.
           </h1>
           <p className="mt-4 max-w-md text-brand-100">
-            A daily, board-specific study engine for the May/June 2027 GCSEs — with parent
+            A daily, board-specific study engine for your GCSEs — with parent
             analytics, curated free resources, and active-recall techniques baked in.
           </p>
           <ul className="mt-8 space-y-2 text-brand-100">
-            <li>✓ Algorithmic daily plan mapped to Lampton term dates</li>
-            <li>✓ 9 subjects, correct exam boards &amp; set texts</li>
+            <li>✓ Daily plan mapped to your school's term dates</li>
+            <li>✓ Correct exam boards, tiers &amp; set texts</li>
             <li>✓ Progress tracking + trajectory charts</li>
           </ul>
         </div>
-        <div className="text-sm text-brand-200">Exam series: May/June 2027</div>
+        <div className="text-sm text-brand-200">For any GCSE exam series</div>
       </div>
       <div className="flex items-center justify-center p-6">
         <div className="w-full max-w-md">

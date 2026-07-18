@@ -23,10 +23,14 @@ BEGIN
   END IF;
 END$$;
 
--- --- Users (account owners: parents / admins) ------------------------------
+-- --- Users (parents / admins / student logins) -----------------------------
+-- Parents & admins sign in with email; student logins (created by a parent)
+-- sign in with a username and have no email. Hence email is nullable and a
+-- nullable unique username is available.
 CREATE TABLE IF NOT EXISTS users (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  email             CITEXT UNIQUE NOT NULL,
+  email             CITEXT UNIQUE,
+  username          CITEXT UNIQUE,
   password_hash     TEXT NOT NULL,
   full_name         TEXT NOT NULL,
   role              user_role NOT NULL DEFAULT 'parent',
@@ -36,10 +40,17 @@ CREATE TABLE IF NOT EXISTS users (
   created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
--- Idempotent add-columns for pre-existing deployments.
+-- Idempotent adjustments for pre-existing deployments.
 ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_token TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS verification_sent_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS username CITEXT;
+ALTER TABLE users ALTER COLUMN email DROP NOT NULL;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'users_username_key') THEN
+    ALTER TABLE users ADD CONSTRAINT users_username_key UNIQUE (username);
+  END IF;
+END $$;
 
 -- --- Students (child profiles owned by a parent) ---------------------------
 CREATE TABLE IF NOT EXISTS students (
@@ -57,6 +68,8 @@ CREATE TABLE IF NOT EXISTS students (
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_students_parent ON students(parent_id);
+-- Optional link to the student's own login account (role='student').
+ALTER TABLE students ADD COLUMN IF NOT EXISTS login_user_id UUID REFERENCES users(id) ON DELETE SET NULL;
 ALTER TABLE students ADD COLUMN IF NOT EXISTS exam_start DATE;
 ALTER TABLE students ADD COLUMN IF NOT EXISTS exam_end DATE;
 ALTER TABLE students ADD COLUMN IF NOT EXISTS term_dates JSONB NOT NULL DEFAULT '[]';
@@ -213,22 +226,14 @@ VALUES
    'Demo Parent', 'parent', TRUE)
 ON CONFLICT (email) DO NOTHING;
 
--- Demo student with Lampton term dates + exam window.
-INSERT INTO students (id, parent_id, full_name, school, year_group, exam_series,
-                      exam_start, exam_end, term_dates, holidays)
+-- Demo student. Calendar (exam window, term dates, holidays) is filled in
+-- dynamically on boot by migrate.js for the NEXT exam series, so the demo is
+-- valid in any year. Left empty here; year_group drives the computed default.
+INSERT INTO students (id, parent_id, full_name, school, year_group)
 VALUES
   ('00000000-0000-0000-0000-0000000000a1',
    '00000000-0000-0000-0000-000000000002',
-   'Demo Student', 'Lampton School', 11, 'May/June 2027',
-   '2027-05-10', '2027-06-18',
-   '[{"name":"Autumn","start":"2026-09-03","end":"2026-12-18"},
-     {"name":"Spring","start":"2027-01-05","end":"2027-03-26"},
-     {"name":"Summer","start":"2027-04-12","end":"2027-07-21"}]',
-   '[{"name":"October half term","start":"2026-10-26","end":"2026-10-30"},
-     {"name":"Christmas","start":"2026-12-19","end":"2027-01-04"},
-     {"name":"February half term","start":"2027-02-15","end":"2027-02-19"},
-     {"name":"Easter","start":"2027-03-27","end":"2027-04-11"},
-     {"name":"May half term","start":"2027-05-31","end":"2027-06-04"}]')
+   'Demo Student', 'Lampton School', 11)
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO student_subjects

@@ -2,21 +2,10 @@ import { useEffect, useState } from "react";
 import { api } from "../api.js";
 import { AlertIcon } from "./icons.jsx";
 
-const DEFAULT_TERMS = [
-  { name: "Autumn", start: "2026-09-03", end: "2026-12-18" },
-  { name: "Spring", start: "2027-01-05", end: "2027-03-26" },
-  { name: "Summer", start: "2027-04-12", end: "2027-07-21" },
-];
-const DEFAULT_HOLIDAYS = [
-  { name: "October half term", start: "2026-10-26", end: "2026-10-30" },
-  { name: "Christmas", start: "2026-12-19", end: "2027-01-04" },
-  { name: "February half term", start: "2027-02-15", end: "2027-02-19" },
-  { name: "Easter", start: "2027-03-27", end: "2027-04-11" },
-  { name: "May half term", start: "2027-05-31", end: "2027-06-04" },
-];
-
-// Guided student onboarding: basics → term dates → subjects (catalog-driven:
-// standard exam boards, tier only where UK GCSEs are tiered, validated grades).
+// Guided student onboarding: basics → term dates → subjects. Everything is
+// year-agnostic: the calendar defaults come from the server for the chosen
+// year group's exam series, and subjects are catalog-driven (standard boards,
+// tier only where UK GCSEs are tiered, validated grades).
 export default function AddStudentForm({ onDone, onCancel }) {
   const [step, setStep] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -25,9 +14,10 @@ export default function AddStudentForm({ onDone, onCancel }) {
 
   const [basics, setBasics] = useState({
     full_name: "", school: "Lampton School", year_group: 11,
-    exam_series: "May/June 2027", exam_start: "2027-05-10", exam_end: "2027-06-18",
+    exam_series: "", exam_start: "", exam_end: "",
   });
-  const [terms, setTerms] = useState(DEFAULT_TERMS);
+  const [terms, setTerms] = useState([]);
+  const [holidays, setHolidays] = useState([]);
   const [subjects, setSubjects] = useState([]);
 
   // Load the UK GCSE catalog (boards, tiering rules, grade ranges).
@@ -48,6 +38,18 @@ export default function AddStudentForm({ onDone, onCancel }) {
       );
     }).catch((e) => setError(e.message));
   }, []);
+
+  // Load dynamic calendar defaults for the exam series of the chosen year group.
+  useEffect(() => {
+    let alive = true;
+    api.getCalendarDefaults(basics.year_group).then((def) => {
+      if (!alive) return;
+      setBasics((b) => ({ ...b, exam_series: def.exam_series, exam_start: def.exam_start, exam_end: def.exam_end }));
+      setTerms(def.term_dates);
+      setHolidays(def.holidays);
+    }).catch((e) => setError(e.message));
+    return () => { alive = false; };
+  }, [basics.year_group]);
 
   const setB = (k) => (e) => setBasics({ ...basics, [k]: e.target.value });
   const setTerm = (i, k) => (e) => setTerms(terms.map((t, j) => (j === i ? { ...t, [k]: e.target.value } : t)));
@@ -81,7 +83,7 @@ export default function AddStudentForm({ onDone, onCancel }) {
         exam_start: basics.exam_start || null,
         exam_end: basics.exam_end || null,
         term_dates: terms,
-        holidays: DEFAULT_HOLIDAYS,
+        holidays,
       });
       for (const s of subjects.filter((x) => x.enabled)) {
         await api.upsertSubject(student.id, {
@@ -159,7 +161,7 @@ export default function AddStudentForm({ onDone, onCancel }) {
         <div className="mt-5">
           <p className="text-sm text-slate-500">
             School term dates shape the plan: school days get evening sessions, holidays get morning
-            deep-work. Pre-filled with Lampton School 2026–27 — adjust to your school.
+            deep-work. Pre-filled for the <b>{basics.exam_series || "exam"}</b> series — adjust to your school.
           </p>
           <div className="mt-3 space-y-2">
             {terms.map((t, i) => (

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { query } from "../db.js";
-import { requireAuth } from "../middleware/auth.js";
+import { requireAuth, requireRole } from "../middleware/auth.js";
 import { asyncHandler } from "../middleware/errorHandler.js";
 import { loadOwnedStudent } from "./students.js";
 import { loadStudentContext } from "../services/studentPlan.js";
@@ -9,6 +9,7 @@ import { materializeHorizon, ensureMaterialized } from "../services/materializer
 
 const router = Router();
 router.use(requireAuth);
+const parentOnly = requireRole("parent", "admin");
 
 function monthsBetween(fromIso, toIso) {
   const a = new Date(`${fromIso}T00:00:00Z`);
@@ -25,6 +26,7 @@ function iso(d) {
 // exam window — the calendar then reads those recorded rows.
 router.post(
   "/students/:id/plan/generate",
+  parentOnly,
   loadOwnedStudent,
   asyncHandler(async (req, res) => {
     const { plan, calendar, student } = await loadStudentContext(req.student.id);
@@ -82,6 +84,7 @@ router.get(
 // Fortnightly adherence, measured against the RECORDED plan rows.
 router.get(
   "/students/:id/evaluations",
+  parentOnly,
   loadOwnedStudent,
   asyncHandler(async (req, res) => {
     const periods = Math.min(parseInt(req.query.periods || "6", 10), 26);

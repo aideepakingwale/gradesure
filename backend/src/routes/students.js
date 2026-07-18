@@ -1,8 +1,9 @@
 import { Router } from "express";
 import { z } from "zod";
 import { query } from "../db.js";
+import bcrypt from "bcryptjs";
 import { validate } from "../middleware/validate.js";
-import { requireAuth } from "../middleware/auth.js";
+import { requireAuth, requireRole } from "../middleware/auth.js";
 import { asyncHandler } from "../middleware/errorHandler.js";
 import { SUBJECT_META } from "../data/curriculum.js";
 import { CATALOG_BY_KEY, BOARDS, TIER_GRADES } from "../data/subjectCatalog.js";
@@ -18,18 +19,26 @@ async function rematerializeFuture(studentId) {
 const router = Router();
 router.use(requireAuth);
 
-// Ownership guard: a parent may only touch their own students. Admins see all.
+// Ownership guard: the owning parent, the student themselves (their own login),
+// or an admin. Parent-only actions add requireRole('parent','admin') on top.
 async function loadOwnedStudent(req, res, next) {
   const { id } = req.params;
   const { rows } = await query("SELECT * FROM students WHERE id = $1", [id]);
   const student = rows[0];
   if (!student) return res.status(404).json({ error: "Student not found." });
-  if (req.user.role !== "admin" && student.parent_id !== req.user.sub) {
+  const u = req.user;
+  const allowed =
+    u.role === "admin" ||
+    student.parent_id === u.sub ||
+    student.login_user_id === u.sub;
+  if (!allowed) {
     return res.status(403).json({ error: "You do not have access to this student." });
   }
   req.student = student;
   next();
 }
+
+const parentOnly = requireRole("parent", "admin");
 
 const studentSchema = z.object({
   full_name: z.string().min(2).max(120),
@@ -76,15 +85,22 @@ function validateGcseRules(b) {
   return null;
 }
 
-// GET /api/students — list caller's students (admins: all)
+// GET /api/students — list caller's students (parent: own; admin: all;
+// student: only their own linked profile).
 router.get(
   "/",
   asyncHandler(async (req, res) => {
-    const sql =
-      req.user.role === "admin"
-        ? "SELECT * FROM students ORDER BY created_at DESC"
-        : "SELECT * FROM students WHERE parent_id = $1 ORDER BY created_at DESC";
-    const params = req.user.role === "admin" ? [] : [req.user.sub];
+    let sql, params;
+    if (req.user.role === "admin") {
+      sql = "SELECT * FROM students ORDER BY created_at DESC";
+      params = [];
+    } else if (req.user.role === "student") {
+      sql = "SELECT * FROM students WHERE login_user_id = $1 ORDER BY created_at DESC";
+      params = [req.user.sub];
+    } else {
+      sql = "SELECT * FROM students WHERE parent_id = $1 ORDER BY created_at DESC";
+      params = [req.user.sub];
+    }
     const { rows } = await query(sql, params);
     res.json({ students: rows });
   })
@@ -93,6 +109,7 @@ router.get(
 // POST /api/students
 router.post(
   "/",
+  parentOnly,
   validate(studentSchema),
   asyncHandler(async (req, res) => {
     const b = req.body;
@@ -113,7 +130,7 @@ router.post(
   })
 );
 
-// GET /api/students/:id — with subjects
+// GET /api/students/:id — with subjects + student-login status
 router.get(
   "/:id",
   loadOwnedStudent,
@@ -122,13 +139,19 @@ router.get(
       "SELECT * FROM student_subjects WHERE student_id = $1 ORDER BY subject_name",
       [req.student.id]
     );
-    res.json({ student: req.student, subjects: rows });
+    let login = { enabled: false, username: null };
+    if (req.student.login_user_id) {
+      const { rows: lu } = await query("SELECT username FROM users WHERE id = $1", [req.student.login_user_id]);
+      if (lu[0]) login = { enabled: true, username: lu[0].username };
+    }
+    res.json({ student: req.student, subjects: rows, login });
   })
 );
 
 // PATCH /api/students/:id
 router.patch(
   "/:id",
+  parentOnly,
   loadOwnedStudent,
   validate(studentSchema.partial()),
   asyncHandler(async (req, res) => {
@@ -165,6 +188,7 @@ router.patch(
 // DELETE /api/students/:id
 router.delete(
   "/:id",
+  parentOnly,
   loadOwnedStudent,
   asyncHandler(async (req, res) => {
     await query("DELETE FROM students WHERE id = $1", [req.student.id]);
@@ -175,6 +199,7 @@ router.delete(
 // PUT /api/students/:id/subjects — upsert a subject enrolment
 router.put(
   "/:id/subjects",
+  parentOnly,
   loadOwnedStudent,
   validate(subjectSchema),
   asyncHandler(async (req, res) => {
@@ -206,6 +231,7 @@ router.put(
 // DELETE /api/students/:id/subjects/:subjectKey
 router.delete(
   "/:id/subjects/:subjectKey",
+  parentOnly,
   loadOwnedStudent,
   asyncHandler(async (req, res) => {
     await query(
@@ -214,6 +240,62 @@ router.delete(
     );
     // Dropping a subject reshapes the week — refresh the recorded schedule.
     await rematerializeFuture(req.student.id);
+    res.json({ ok: true });
+  })
+);
+
+// ---- Student login management (parent-created credentials) -----------------
+const loginSchema = z.object({
+  username: z.string().regex(/^[a-zA-Z0-9._-]{3,40}$/, "3–40 chars: letters, numbers, . _ -"),
+  password: z.string().min(6).max(128),
+});
+
+// PUT /api/students/:id/login — create or update the student's login.
+router.put(
+  "/:id/login",
+  parentOnly,
+  loadOwnedStudent,
+  validate(loginSchema),
+  asyncHandler(async (req, res) => {
+    const { username, password } = req.body;
+    const hash = await bcrypt.hash(password, 10);
+
+    // Username must be unique across all accounts (excluding this student's own).
+    const clash = await query(
+      "SELECT 1 FROM users WHERE username = $1 AND id <> COALESCE($2, gen_random_uuid())",
+      [username, req.student.login_user_id]
+    );
+    if (clash.rowCount > 0) {
+      return res.status(409).json({ error: "That username is already taken." });
+    }
+
+    if (req.student.login_user_id) {
+      await query(
+        "UPDATE users SET username = $1, password_hash = $2, full_name = $3 WHERE id = $4",
+        [username, hash, req.student.full_name, req.student.login_user_id]
+      );
+    } else {
+      const { rows } = await query(
+        `INSERT INTO users (username, password_hash, full_name, role, email_verified)
+         VALUES ($1, $2, $3, 'student', TRUE) RETURNING id`,
+        [username, hash, req.student.full_name]
+      );
+      await query("UPDATE students SET login_user_id = $1 WHERE id = $2", [rows[0].id, req.student.id]);
+    }
+    res.json({ login: { enabled: true, username } });
+  })
+);
+
+// DELETE /api/students/:id/login — revoke the student's login.
+router.delete(
+  "/:id/login",
+  parentOnly,
+  loadOwnedStudent,
+  asyncHandler(async (req, res) => {
+    if (req.student.login_user_id) {
+      await query("DELETE FROM users WHERE id = $1", [req.student.login_user_id]);
+      // FK is ON DELETE SET NULL, so students.login_user_id clears automatically.
+    }
     res.json({ ok: true });
   })
 );

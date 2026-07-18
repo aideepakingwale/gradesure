@@ -11,8 +11,9 @@ const PROVIDER_BADGE = {
   "rule-based": { label: "Built-in engine", cls: "bg-slate-100 text-slate-600 ring-1 ring-slate-200" },
 };
 
-// The persisted AI-generated study guide + a generate/regenerate action.
-export default function StudyGuidePanel({ plan, onGenerate, generating }) {
+// The persisted AI-generated study guide. Parents can generate/regenerate;
+// students see it read-only.
+export default function StudyGuidePanel({ plan, onGenerate, generating, readOnly = false }) {
   const [open, setOpen] = useState(true);
 
   if (!plan) {
@@ -25,15 +26,18 @@ export default function StudyGuidePanel({ plan, onGenerate, generating }) {
           <div>
             <h2 className="text-lg font-bold text-slate-900">AI study guide</h2>
             <p className="text-sm text-slate-500">
-              Generate a personalised guide from current grades, targets, tier risk and term dates —
-              saved to the account so it loads instantly next time.
+              {readOnly
+                ? "Your study guide hasn't been generated yet — ask your parent to create it."
+                : "Generate a personalised guide from current grades, targets, tier risk and term dates — saved to the account so it loads instantly next time."}
             </p>
           </div>
         </div>
-        <button className="btn-primary flex-none" onClick={onGenerate} disabled={generating}>
-          <BoltIcon className="h-4 w-4" />
-          {generating ? "Generating…" : "Generate plan"}
-        </button>
+        {!readOnly && (
+          <button className="btn-primary flex-none" onClick={onGenerate} disabled={generating}>
+            <BoltIcon className="h-4 w-4" />
+            {generating ? "Generating…" : "Generate plan"}
+          </button>
+        )}
       </div>
     );
   }
@@ -120,10 +124,12 @@ export default function StudyGuidePanel({ plan, onGenerate, generating }) {
 
           <div className="mt-4 flex items-center justify-between text-xs text-slate-400">
             <span>Saved {new Date(plan.created_at).toLocaleDateString("en-GB")}{plan.model ? ` · ${plan.model}` : ""}</span>
-            <button className="btn-ghost gap-1.5 px-3 py-1.5 text-xs" onClick={onGenerate} disabled={generating}>
-              <ResetIcon className="h-3.5 w-3.5" />
-              {generating ? "Regenerating…" : "Regenerate"}
-            </button>
+            {!readOnly && (
+              <button className="btn-ghost gap-1.5 px-3 py-1.5 text-xs" onClick={onGenerate} disabled={generating}>
+                <ResetIcon className="h-3.5 w-3.5" />
+                {generating ? "Regenerating…" : "Regenerate"}
+              </button>
+            )}
           </div>
         </>
       )}
